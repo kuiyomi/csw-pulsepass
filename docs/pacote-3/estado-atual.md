@@ -1,6 +1,6 @@
 # Estado do desenvolvimento em 21/11/2026
 
-Versão de código `ec6d8b1e72b8ef8e616ebfd2c48ea37d79bae329`. O relatório do checkpoint documenta o estágio corrente conforme o enunciado. A meta de compra completa registrada em docs/specs/scope-r1.md continua em desenvolvimento.
+Versão de código `ec6d8b1e72b8ef8e616ebfd2c48ea37d79bae329`. O [relatório do checkpoint](Pacote_3_PulsePass.pdf) documenta o estágio corrente conforme o enunciado. A meta de compra completa registrada em docs/specs/scope-r1.md continua em desenvolvimento.
 
 | Verificação executada | Resultado |
 |---|---|

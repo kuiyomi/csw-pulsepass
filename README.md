@@ -2,7 +2,11 @@
 
 Plataforma distribuída de bilhetagem para megaeventos. Projeto de Construção de Software da PUCRS, 2026/2.
 
-- [Pacote 3 — relatório, requisitos atualizados e arquitetura atualizada](docs/pacote-3/README.md)
+**[Relatório do Pacote 3 para entrega no Moodle (PDF)](docs/pacote-3/Pacote_3_PulsePass.pdf)**
+
+O PDF reúne o checkpoint e os relatórios atualizados dos Pacotes 1 e 2.
+
+- [Documentação e anexos do checkpoint](docs/pacote-3/README.md)
 - [Estado atual e instruções de execução](docs/pacote-3/estado-atual.md)
 - [Especificações dos serviços e dos critérios de aceite](docs/specs/)
 

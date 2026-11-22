@@ -4,7 +4,7 @@ export HOME=/tmp
 export KC_CLI_OPTS="-Duser.home=/tmp"
 kc=/opt/keycloak/bin/kcadm.sh
 kcadm() { local verb=$1; shift; "$kc" "$verb" "$@" --config /tmp/kcadm.config; }
-for i in {1..60}; do
+for ((attempt=1; attempt<=60; attempt++)); do
   if kcadm config credentials --server http://keycloak:8080 --realm master --user admin --password "$ADMIN_PASSWORD" >/dev/null 2>&1; then break; fi
   sleep 2
 done

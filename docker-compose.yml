@@ -1,0 +1,151 @@
+name: pulsepass
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Preencha .env}
+      SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD:?Preencha .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./infra/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    volumes: [broker:/var/lib/kafka/data]
+    healthcheck:
+      test: [CMD, kafka-topics, --bootstrap-server, kafka:9092, --list]
+      interval: 10s
+      timeout: 8s
+      retries: 25
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    entrypoint: [sh, /init/create-topics.sh]
+    volumes: [./infra/kafka:/init:ro]
+    depends_on:
+      kafka: {condition: service_healthy}
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    ports: ["127.0.0.1:8090:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pulsepass
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka: {condition: service_healthy}
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.8
+    command: [start-dev, --import-realm]
+    ports: ["127.0.0.1:8081:8080"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${SERVICE_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Preencha .env}
+    volumes: [./infra/keycloak:/opt/keycloak/data/import:ro]
+    depends_on:
+      postgres: {condition: service_healthy}
+  analytics-service:
+    build:
+      context: .
+      args: {MODULE: analytics-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+  api-gateway:
+    build:
+      context: .
+      args: {MODULE: api-gateway}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      INVENTORY_URL: http://inventory-service:8080
+  iam-admin-service:
+    build:
+      context: .
+      args: {MODULE: iam-admin-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+  inventory-service:
+    build:
+      context: .
+      args: {MODULE: inventory-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    environment:
+      SPRING_PROFILES_ACTIVE: catalog
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres/inventory
+      SPRING_DATASOURCE_USERNAME: inventory
+      SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
+    depends_on:
+      postgres: {condition: service_healthy}
+  order-service:
+    build:
+      context: .
+      args: {MODULE: order-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+  realtime-service:
+    build:
+      context: .
+      args: {MODULE: realtime-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+  ticket-service:
+    build:
+      context: .
+      args: {MODULE: ticket-service}
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+  frontend:
+    build: ./frontend/web
+    ports: ["127.0.0.1:5173:80"]
+    depends_on:
+      api-gateway: {condition: service_healthy}
+volumes:
+  database:
+  broker:

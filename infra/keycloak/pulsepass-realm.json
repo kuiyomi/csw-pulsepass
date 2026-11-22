@@ -1,0 +1,16 @@
+{
+  "realm": "pulsepass",
+  "enabled": true,
+  "registrationAllowed": true,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "roles": {"realm": [{"name":"CLIENTE"},{"name":"ORGANIZADOR"},{"name":"OPERADOR"},{"name":"ADMIN"},
+    {"name":"default-roles-pulsepass","composite":true,"composites":{"realm":["CLIENTE"]}}]},
+  "defaultRole": {"name":"default-roles-pulsepass"},
+  "clients": [
+    {"clientId":"pulsepass-spa","publicClient":true,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,
+     "redirectUris":["http://localhost:5173/*"],"webOrigins":["http://localhost:5173"],
+     "attributes":{"pkce.code.challenge.method":"S256"}},
+    {"clientId":"pulsepass-api","bearerOnly":true}
+  ]
+}

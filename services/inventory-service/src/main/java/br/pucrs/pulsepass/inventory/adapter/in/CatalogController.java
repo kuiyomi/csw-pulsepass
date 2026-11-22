@@ -17,8 +17,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class CatalogController {
     private final DataSource dataSource;
 
-    public CatalogController(DataSource dataSource) {
-        this.dataSource = dataSource;
+    private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    private final com.fasterxml.jackson.databind.ObjectMapper json;
+    public CatalogController(DataSource dataSource, org.springframework.data.redis.core.StringRedisTemplate redis,
+                             com.fasterxml.jackson.databind.ObjectMapper json) {
+        this.dataSource = dataSource; this.redis=redis; this.json=json;
     }
 
     public record Summary(UUID id, String nome, java.time.Instant dataHora, String local,
@@ -34,6 +37,13 @@ public class CatalogController {
         if (page < 0 || size < 1 || size > 100) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Paginação inválida.");
         }
+        String generation = redis.opsForValue().get("catalog:generation");
+        String key = "catalog:list:" + generation + ":" + page + ":" + size + ":" +
+                UUID.nameUUIDFromBytes(q.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String cached = redis.opsForValue().get(key);
+        try {
+            if (cached != null) return json.readValue(cached, Page.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) { redis.delete(key); }
         String filter = " WHERE e.status = 'PUBLICADO' AND strpos(lower(e.name), lower(?)) > 0 ";
         try (var db = dataSource.getConnection();
              var count = db.prepareStatement("SELECT count(*) FROM venue_event e" + filter);
@@ -55,7 +65,10 @@ public class CatalogController {
                             rows.getLong(5), rows.getBoolean(6) ? "ABERTA" : "ESGOTADO"));
                 }
                 totals.next();
-                return new Page(items, page, totals.getLong(1));
+                var result = new Page(items, page, totals.getLong(1));
+                try { redis.opsForValue().set(key,json.writeValueAsString(result),java.time.Duration.ofSeconds(30)); }
+                catch (com.fasterxml.jackson.core.JsonProcessingException ex) { throw new IllegalStateException(ex); }
+                return result;
             }
         }
     }

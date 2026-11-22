@@ -68,6 +68,16 @@ services:
     volumes: [./infra/keycloak:/opt/keycloak/data/import:ro]
     depends_on:
       postgres: {condition: service_healthy}
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.0.8
+    entrypoint: [/bin/bash, /init/configure.sh]
+    volumes: [./infra/keycloak-init:/init:ro]
+    environment:
+      ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      IAM_SECRET: ${IAM_CLIENT_SECRET:-${SERVICE_DB_PASSWORD}}
+      DEMO_PASSWORD: ${PULSEPASS_DEMO_PASSWORD:-pulsepass-demo-local}
+    depends_on:
+      keycloak: {condition: service_started}
   analytics-service:
     build:
       context: .
@@ -90,6 +100,15 @@ services:
     environment:
       INVENTORY_URL: http://inventory-service:8080
   iam-admin-service:
+    environment:
+      IAM_CLIENT_SECRET: ${IAM_CLIENT_SECRET:-${SERVICE_DB_PASSWORD}}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres/iam
+      SPRING_DATASOURCE_USERNAME: iam
+      SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
+    depends_on:
+      keycloak-init: {condition: service_completed_successfully}
+      kafka-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
     build:
       context: .
       args: {MODULE: iam-admin-service}
@@ -113,8 +132,16 @@ services:
       SPRING_DATASOURCE_USERNAME: inventory
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
     depends_on:
+      kafka-init: {condition: service_completed_successfully}
       postgres: {condition: service_healthy}
   order-service:
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres/orders
+      SPRING_DATASOURCE_USERNAME: orders
+      SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
     build:
       context: .
       args: {MODULE: order-service}
@@ -124,6 +151,8 @@ services:
       timeout: 5s
       retries: 20
   realtime-service:
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
     build:
       context: .
       args: {MODULE: realtime-service}
@@ -141,11 +170,21 @@ services:
       interval: 15s
       timeout: 5s
       retries: 20
+  catalogo-demo:
+    image: postgres:16-alpine
+    command: [psql, -h, postgres, -U, inventory, -d, inventory, -v, ON_ERROR_STOP=1, -f, /demo/catalogo.sql]
+    environment:
+      PGPASSWORD: ${SERVICE_DB_PASSWORD}
+    volumes: [./infra/demo:/demo:ro]
+    depends_on:
+      inventory-service: {condition: service_healthy}
   frontend:
     build: ./frontend/web
     ports: ["127.0.0.1:5173:80"]
     depends_on:
       api-gateway: {condition: service_healthy}
+      catalogo-demo: {condition: service_completed_successfully}
+      iam-admin-service: {condition: service_healthy}
 volumes:
   database:
   broker:

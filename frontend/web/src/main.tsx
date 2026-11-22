@@ -1,5 +1,8 @@
 import {useEffect, useState} from "react";
 import {createRoot} from "react-dom/client";
+import {account, initialize, login, logout, observeSession, accessToken} from "./session";
+import {SeatMap, Checkout} from "./purchase";
+import {Admin, Apply, Organizer} from "./governance";
 import "./style.css";
 
 type Summary = {id: string; nome: string; local: string; dataHora: string; precoMinimo: number; disponibilidade: string};
@@ -47,7 +50,7 @@ function EventDetail({id}: {id: string}) {
     const event = result?.value;
     return <><a href="#">Voltar ao catálogo</a>{!result && <p role="status">Carregando evento…</p>}
     {result?.error && <p role="alert">{result.error}</p>}{event && <><h1>{event.nome}</h1><p>{event.descricao}</p>
-    <p>{date(event.dataHora)} · {event.local}</p><h2>Setores</h2><div className="grid">{event.setores.map(sector =>
+    <p>{date(event.dataHora)} · {event.local}</p>{account()?<a href={"#mapa/"+id}>Escolher assentos</a>:<button onClick={()=>login()}>Entrar para escolher assentos</button>}<h2>Setores</h2><div className="grid">{event.setores.map(sector =>
         <article key={sector.id}><h3>{sector.nome}</h3><p>{money(sector.preco)} · {sector.livres} de {sector.capacidade} livres</p>
         {sector.acessivel && <p>Acessível</p>}</article>)}</div></>}</>;
 }
@@ -59,7 +62,25 @@ function App() {
         window.addEventListener("hashchange", change);
         return () => window.removeEventListener("hashchange", change);
     }, []);
-    return <><header><a href="#">PulsePass</a></header><main>{route.startsWith("#evento/") ? <EventDetail id={route.slice(8)}/> : <Catalog/>}</main></>;
+    const [user,setUser]=useState(account),[error,setError]=useState("");
+    useEffect(()=>observeSession(()=>setUser(account())),[]);
+    const roles=user?.realm_access?.roles??[];
+    const guarded=(role:string,screen:React.ReactNode)=>roles.includes(role)?screen:<p>Entre com o perfil necessário para acessar esta página.</p>;
+    let content:React.ReactNode=<Catalog/>;
+    if(route.startsWith("#evento/"))content=<EventDetail key={route} id={route.slice(8)}/>;
+    if(route.startsWith("#mapa/"))content=guarded("CLIENTE",<SeatMap key={route} id={route.slice(6)}/>);
+    if(route.startsWith("#pedido/"))content=guarded("CLIENTE",<Checkout key={route} id={route.slice(8)}/>);
+    if(route==="#organizador")content=guarded("ORGANIZADOR",<Organizer/>);
+    if(route==="#solicitar")content=guarded("CLIENTE",<Apply/>);
+    if(route==="#admin")content=guarded("ADMIN",<Admin/>);
+    const run=(fn:()=>Promise<unknown>)=>fn().catch(e=>setError(e.message));
+    return <><header><a href="#">PulsePass</a><nav><a href="#">Eventos</a>
+        {roles.includes("ORGANIZADOR")?<a href="#organizador">Meus eventos</a>:user&&<a href="#solicitar">Ser organizador</a>}
+        {roles.includes("ADMIN")&&<a href="#admin">Aprovações</a>}
+        {user?<><span>{user.preferred_username}</span><button onClick={()=>run(()=>accessToken(true))}>Atualizar perfil</button><button onClick={()=>run(logout)}>Sair</button></>:
+            <><button onClick={()=>run(()=>login())}>Entrar</button><button onClick={()=>run(()=>login(true))}>Criar conta</button></>}
+        </nav></header><main>{error&&<p role="alert">{error}</p>}{content}</main></>;
 }
 
-createRoot(document.getElementById("root")!).render(<App/>);
+const root=createRoot(document.getElementById("root")!);
+initialize().then(()=>root.render(<App/>)).catch(error=>root.render(<main><p role="alert">{error.message}</p><a href="/">Voltar ao catálogo</a></main>));

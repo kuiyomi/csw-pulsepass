@@ -6,3 +6,12 @@ label { display: grid; gap: .5rem; max-width: 28rem } input, button { font: inhe
 .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap: 1rem }
 article { padding: 1.25rem; background: #151526; border: 1px solid #2a2a44; border-radius: 12px }
 button { cursor: pointer; margin: 1rem .5rem 0 0 } button:disabled { opacity: .45 } :focus-visible { outline: 2px solid white; outline-offset: 3px }
+header, header nav { display:flex; flex-wrap:wrap; align-items:center; gap:1rem }
+header { justify-content:space-between } header nav a,header nav button { font-size:1rem; margin:0 }
+form { display:grid; gap:.8rem; margin:1rem 0; max-width:32rem }
+form button { justify-self:start } textarea { min-height:5rem; font:inherit; padding:.75rem }
+.stage { text-align:center; padding:1rem; background:#272139; border-radius:12px }
+.seat-list { display:flex; flex-wrap:wrap; gap:.35rem; max-width:48rem }
+.seat-list button { min-width:3rem; margin:0 }
+.seat-list [aria-pressed="true"] { color:#fff; background:#7350bc }
+input[type="checkbox"] { width:1.3rem } progress { width:min(28rem,100%) }

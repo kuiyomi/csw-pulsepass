@@ -6,6 +6,12 @@ on:
 permissions:
   contents: read
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck infra/init-db/*.sh infra/keycloak-init/*.sh infra/kafka/*.sh
+      - run: python3 -m py_compile scripts/testar-compra.py && node --check scripts/testar-telas.cjs
   backend:
     runs-on: ubuntu-latest
     steps:
@@ -45,3 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose --env-file .env.example config --quiet
+      - run: cp .env.example .env
+      - run: docker compose up -d --build --wait --wait-timeout 300
+      - run: python3 scripts/testar-compra.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --prefix "$RUNNER_TEMP/browser" playwright@1.56.1
+      - run: "$RUNNER_TEMP/browser/node_modules/.bin/playwright install --with-deps chromium"
+      - run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node scripts/testar-telas.cjs
+      - if: failure()
+        run: docker compose ps -a

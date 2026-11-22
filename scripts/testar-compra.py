@@ -7,13 +7,30 @@ import secrets
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
-from http.cookiejar import CookieJar
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener, urlopen
 
 WEB = "http://localhost:5173"
 OIDC = "http://localhost:8081/realms/pulsepass/protocol/openid-connect"
+
+
+class LocalLoginCookies(DefaultCookiePolicy):
+    def return_ok_secure(self, cookie, request):
+        # O navegador aceita cookies Secure no localhost durante o login local.
+        if urlparse(request.full_url)[:2] == ("http", "localhost:8081"):
+            return True
+        return super().return_ok_secure(cookie, request)
+
+
+class AuthorizationCallback(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        callback = urlparse(newurl)
+        if callback[:3] == ("http", "localhost:5173", "/"):
+            # O código pertence ao cliente OAuth. Capture-o antes de abrir a SPA.
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class LoginForm(HTMLParser):
@@ -32,15 +49,25 @@ def login(user):
     state = secrets.token_urlsafe(20)
     authorize = dict(client, response_type="code", scope="openid", state=state,
                      code_challenge=challenge, code_challenge_method="S256")
-    browser = build_opener(HTTPCookieProcessor(CookieJar()))
+    browser = build_opener(HTTPCookieProcessor(CookieJar(policy=LocalLoginCookies())), AuthorizationCallback())
     with browser.open(OIDC + "/auth?" + urlencode(authorize), timeout=20) as page:
         form = LoginForm()
         form.feed(page.read().decode())
     assert form.action, "Formulário de login ausente"
     data = urlencode({"username": user, "password": os.getenv("PULSEPASS_DEMO_PASSWORD", "pulsepass-demo-local")})
-    with browser.open(form.action, data.encode(), timeout=20) as redirect:
-        query = parse_qs(urlparse(redirect.url).query)
-        assert query.get("state") == [state], f"Login não concluído para {user}. Confira a senha de demonstração."
+    if urlparse(form.action)[:2] != urlparse(OIDC)[:2]:
+        raise RuntimeError("O endereço do formulário difere do Keycloak configurado.")
+    try:
+        with browser.open(form.action, data.encode(), timeout=20):
+            raise RuntimeError(f"Login de {user} não concluiu a autorização. Confira a conta e a senha de demonstração.")
+    except HTTPError as error:
+        with error:
+            callback = urlparse(error.headers.get("Location", ""))
+            if error.code not in (302, 303) or callback[:3] != ("http", "localhost:5173", "/"):
+                raise RuntimeError(f"Keycloak respondeu HTTP {error.code} ao login de {user}. Consulte os eventos de login no log do Keycloak.") from None
+            query = parse_qs(callback.query)
+    if query.get("state") != [state] or len(query.get("code", [])) != 1:
+        raise RuntimeError(f"O retorno do login de {user} não contém o código e o estado esperados.")
     token = dict(client, grant_type="authorization_code", code=query["code"][0], code_verifier=verifier)
     with browser.open(OIDC + "/token", urlencode(token).encode(), timeout=20) as response:
         return json.load(response)["access_token"]
@@ -69,6 +96,7 @@ def api(path, token=None, body=None, status=200, key=None):
 
 def run():
     owner, buyer = login("organizador"), login("cliente")
+    print("OK: login de organizador e cliente.", flush=True)
     name = "Teste R1 " + uuid.uuid4().hex[:8]
     events = "inventory/events"
     draft = dict(nome=name, descricao="Evento de teste HTTP", local="Auditório", dataHora="2030-01-10T21:00:00Z")
@@ -99,7 +127,8 @@ def run():
         assert api(pay, buyer, payload, expected, payment_key) == first
     assert api("orders/" + order["id"], buyer)["status"] == "PAGO"
     assert api(path + "/seats", buyer)["setores"][0]["assentos"][0]["status"] == "VENDIDO"
-    # Cada cliente usa uma chave própria e disputa o segundo assento.
+    print("OK: reserva e pagamento simulado. Recusa, timeout, aprovação e repetição das chaves verificados.", flush=True)
+    # Cada requisição usa uma chave própria e disputa o segundo assento.
     last = dict(eventoId=event, assentoIds=[seats[1]["id"]])
     def reserve_once(_):
         return api("orders", buyer, last, (201, 409), str(uuid.uuid4()))
